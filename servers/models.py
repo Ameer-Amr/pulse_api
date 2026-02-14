@@ -15,6 +15,7 @@ class UserServer(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     server_name = Column(String, nullable=False)
     server_url = Column(String, nullable=False)
+    interval_seconds = Column(Integer, default=60)
     status = Column(String, default=ServerStatus.ACTIVE.value)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

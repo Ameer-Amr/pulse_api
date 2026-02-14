@@ -16,8 +16,20 @@ app = FastAPI(title="PulseAPI", version="1.0.0")
 app.include_router(auth.router)
 app.include_router(api.router)
 
+@app.middleware("http")
+async def add_no_cache_header(request: Request, call_next):
+    response = await call_next(request)
+    # This tells the browser to always validate with the server
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
 @app.get("/")
 async def root(request: Request):
+    token = request.cookies.get("access_token")
+    if token:
+        return RedirectResponse(url="/dashboard", status_code=303)
     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/signup")

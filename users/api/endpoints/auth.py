@@ -73,3 +73,9 @@ async def login_user(
     response.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True)
     return response
 
+
+@router.get("/logout")
+async def logout_user():
+    response = RedirectResponse(url="/signin", status_code=status.HTTP_303_SEE_OTHER)
+    response.delete_cookie(key="access_token")
+    return response
