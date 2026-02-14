@@ -1,14 +1,53 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Depends
+from sqlalchemy.orm import Session
+from fastapi.responses import RedirectResponse
+from .config import templates
+from .database import get_db
+from .security import get_current_user_from_cookie
 from users.api.endpoints import auth
-from app.database import engine
+from servers.apis import api
 from users import models
+from servers.models import UserServer
 
 
 app = FastAPI(title="PulseAPI", version="1.0.0")
 
 # Include all our organized routes
 app.include_router(auth.router)
+app.include_router(api.router)
 
 @app.get("/")
-async def root():
-    return {"message": "PulseAPI is online"}
+async def root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+@app.get("/signup")
+async def signup_page(request: Request):
+    return templates.TemplateResponse("signup.html", {"request": request})
+
+@app.get("/signin")
+async def signin_page(request: Request):
+    return templates.TemplateResponse("signin.html", {"request": request})
+
+@app.get("/dashboard")
+async def dashboard(request: Request, db: Session = Depends(get_db)):
+
+    email = get_current_user_from_cookie(request)
+    if not email:
+        # Redirect to login if token is missing or invalid
+        return RedirectResponse(url="/signin?error=Please login first", status_code=303)
+
+    user = db.query(models.User).filter(models.User.email == email).first()
+    sites = db.query(UserServer).filter(UserServer.user_id == user.id).all()
+
+    return templates.TemplateResponse(
+        "dashboard.html", 
+        {"request": request, "user": user, "sites": sites}
+    )
+
+@app.get("/create-server")
+async def create_server_page(request: Request, db: Session = Depends(get_db)):
+    email = get_current_user_from_cookie(request)
+    if not email:
+        # Redirect to login if token is missing or invalid
+        return RedirectResponse(url="/signin?error=Please login first", status_code=303)
+    return templates.TemplateResponse("create_server.html", {"request": request})

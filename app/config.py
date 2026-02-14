@@ -1,10 +1,17 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from fastapi.templating import Jinja2Templates
+from passlib.context import CryptContext
 
 class Settings(BaseSettings):
     # These match the names in your .env / docker-compose
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
     POSTGRES_DB: str
+
+    # JWT Settings
+    SECRET_KEY: str
+    ALGORITHM: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
     
     # We build the URL using the service name 'db' from docker-compose
     @property
@@ -14,3 +21,4 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env")
 
 settings = Settings()
+templates = Jinja2Templates(directory="templates")

@@ -1,37 +1,75 @@
-from fastapi import Depends, HTTPException, APIRouter, status
+from fastapi import Depends, HTTPException, APIRouter, status, Request, Form
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from users import models, schemas
+from users import models
 from app.database import get_db
 from typing import List
+from app.config import templates
+from argon2 import PasswordHasher
+from app.security import create_access_token
+
 
 router = APIRouter(
     prefix="/users",
     tags=["users"]
 )
 
-@router.post("/create", status_code=status.HTTP_201_CREATED, response_model=schemas.User)
-async def create_user(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
-    # 1. Check if user already exists
-    existing_user = db.query(models.User).filter(models.User.email == user_data.email).first()
+
+@router.post("/register")
+async def register_user(
+    request: Request,
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation
+    if len(password) < 6:
+        return templates.TemplateResponse("signup.html", {"request": request, "error": "Password too short!"})
+    
+    # 2. Check for existing user 
+    existing_user = db.query(models.User).filter(models.User.email == email).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    # 2. Create new user
-    db_user = models.User(**user_data.dict())
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+        return templates.TemplateResponse("signup.html", {"request": request, "error": "Email already registered!"})
 
-@router.get("/lists", response_model=List[schemas.User])
-def get_all_users(db: Session = Depends(get_db)):
-    users = db.query(models.User).all()
-    return users
+    # 3. Hash and Save
+    hashed_password = PasswordHasher().hash(password)
+    db_user = models.User(name=name, email=email, password=hashed_password)
+    
+    try:
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+    except Exception as e:
+        db.rollback()
+        return templates.TemplateResponse("signup.html", {"request": request, "error": "Database error. Try again."})
 
-@router.get("/{user_id}", response_model=schemas.User)
-async def get_user(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    return RedirectResponse(url="/signin", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/login")
+async def login_user(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    # 1. Fetch user by email
+    user = db.query(models.User).filter(models.User.email == email).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+        return templates.TemplateResponse("signin.html", {"request": request, "error": "Invalid credentials!"})
+    
+    # 2. Verify password
+    try:
+        PasswordHasher().verify(user.password, password)
+    except:
+        return templates.TemplateResponse("signin.html", {"request": request, "error": "Invalid credentials!"})
+    
+    # 3. Create JWT token
+    access_token = create_access_token(data={"sub": user.email})
 
+    # 4. Successful login (Setting cookie and redirecting)
+    response = RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+    response.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True)
+    return response
 
