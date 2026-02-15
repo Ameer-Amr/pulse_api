@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
     POSTGRES_DB: str
+    POSTGRES_HOST: str
 
     # JWT Settings
     SECRET_KEY: str
@@ -16,7 +17,9 @@ class Settings(BaseSettings):
     # We build the URL using the service name 'db' from docker-compose
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@db:5432/{self.POSTGRES_DB}"
+        if self.POSTGRES_HOST == "db:5432":
+            return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}/{self.POSTGRES_DB}"
+        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}/{self.POSTGRES_DB}?sslmode=require&channel_binding=require"
 
     model_config = SettingsConfigDict(env_file=".env")
 
