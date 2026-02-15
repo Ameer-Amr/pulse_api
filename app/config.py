@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+    ENVIRONMENT: str
     
     # We build the URL using the service name 'db' from docker-compose
     @property

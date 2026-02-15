@@ -1,5 +1,6 @@
 import asyncio
-import alembic.config
+from .config import settings
+from .database import engine, Base
 from fastapi import FastAPI, Request, Depends
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
@@ -15,18 +16,17 @@ from servers.worker import monitoring_loop
 from fastapi.middleware.cors import CORSMiddleware
 
 
-def run_migrations():
-    print("Running migrations...")
-    # This assumes alembic.ini is in your root folder
-    alembic_cfg = alembic.config.Config("alembic.ini")
-    alembic.command.upgrade(alembic_cfg, "head")
-    print("Migrations complete!")
+if settings.ENVIRONMENT == "production":
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("Production: Database tables verified/created.")
+    except Exception as e:
+        print(f"Migration error: {e}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # STARTUP: Run the monitoring loop in the background
-    run_migrations()
     worker_task = asyncio.create_task(monitoring_loop())
     yield
     # SHUTDOWN: Clean up
