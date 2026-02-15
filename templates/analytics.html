@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Analytics - {{ server.server_name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto mt-10 p-6">
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-slate-900">{{ server.server_name }}</h1>
+            <p class="text-slate-500">{{ server.server_url }}</p>
+        </div>
+        <div class="flex items-center space-x-4">
+            <a href="/dashboard"
+               class="inline-flex items-center px-3 py-2 bg-slate-100 text-slate-800 rounded-md text-sm font-medium hover:bg-slate-200"
+               aria-label="Back to dashboard">← Back to Dashboard</a>
+
+            <div id="status-badge">
+                <span class="px-4 py-2 rounded-full text-sm font-bold bg-green-100 text-green-700">Live Monitoring Active</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div class="lg:col-span-2 bg-white p-6 shadow-xl rounded-2xl">
+            <h3 class="text-lg font-semibold mb-4 text-slate-700">Last 10 Checks</h3>
+
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead class="text-left text-slate-500">
+                        <tr>
+                            <th class="px-4 py-2">Checked Time</th>
+                            <th class="px-4 py-2">Status</th>
+                            <th class="px-4 py-2">Latency (ms)</th>
+                            <th class="px-4 py-2">Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="analytics-tbody">
+                        {% for a in labels %}
+                            <tr class="border-t">
+                                <td class="px-4 py-2 text-slate-700">{{ a.created_at.strftime('%Y-%m-%d %H:%M:%S') if a.created_at else '-' }}</td>
+                                <td class="px-4 py-2">
+                                    <span class="{{ 'text-green-600 font-medium' if a.status_code == 200 else 'text-red-600 font-medium' }}">{{ a.status_code }}</span>
+                                </td>
+                                <td class="px-4 py-2 text-slate-700">{{ a.latency_ms }}</td>
+                                <td class="px-4 py-2 text-slate-500">{{ a.notes or '-' }}</td>
+                            </tr>
+                        {% else %}
+                            <tr>
+                                <td colspan="4" class="px-4 py-6 text-center text-slate-500 italic">No analytics yet</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="bg-slate-900 text-slate-300 p-6 shadow-xl rounded-2xl overflow-hidden flex flex-col h-[400px] min-h-0">
+            <div class="flex items-start justify-between mb-2">
+                <h3 class="text-lg font-semibold text-white flex items-center">
+                    <span class="relative flex h-3 w-3 mr-2">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
+                    Live Feed
+                </h3>
+                <div class="text-xs bg-slate-800 text-slate-300 px-2 py-1 rounded-full">
+                    Interval: {{ server.interval_seconds }}s
+                </div>
+            </div>
+
+            <p class="text-slate-400 text-sm mb-3">Upcoming checks will appear every {{ server.interval_seconds }} seconds.</p>
+
+            <div id="ws-log" role="log" aria-live="polite" aria-atomic="false" tabindex="0"
+                 class="flex-1 overflow-y-auto custom-scrollbar space-y-2 text-sm font-mono bg-slate-900/40 p-2 rounded">
+                <div class="text-slate-500 italic">Connecting to live stream...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const serverId = "{{ server.id }}";
+    const host = window.location.hostname === "0.0.0.0" ? "127.0.0.1:8000" : window.location.host;
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = `${protocol}://${host}/servers/ws/server/${serverId}`;
+
+    // Keep a single WS per server across soft navigations
+    window._serverWS = window._serverWS || {};
+    window._wsRetry = window._wsRetry || {};
+
+    const logContainer = document.getElementById('ws-log');
+    const analyticsTbody = document.getElementById('analytics-tbody');
+
+    function createSocket() {
+        // If an open socket exists, reuse it
+        const existing = window._serverWS[serverId];
+        if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
+            return existing;
+        }
+
+        const ws = new WebSocket(url);
+        window._serverWS[serverId] = ws;
+        window._wsRetry[serverId] = window._wsRetry[serverId] || { attempts: 0 };
+
+        ws.addEventListener('open', () => {
+            window._wsRetry[serverId].attempts = 0;
+            const ok = document.createElement('div');
+            ok.className = "text-green-400 py-2";
+            ok.innerText = "Connected to live stream";
+            logContainer.prepend(ok);
+        });
+
+        ws.addEventListener('message', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+
+                // Add entry to the Live Feed log
+                const entry = document.createElement('div');
+                entry.className = "p-2 rounded bg-slate-800 border-l-4 " + (data.status === 200 ? "border-green-500" : "border-red-500");
+                entry.innerHTML = `<span class="text-slate-500">[${new Date().toLocaleTimeString()}]</span>
+                                   <span class="${data.status === 200 ? 'text-green-400' : 'text-red-400'} ml-2">${data.status}</span>
+                                   - <span class="ml-2">${data.latency}ms</span>`;
+                logContainer.prepend(entry);
+
+                // Keep log length bounded
+                const maxEntries = 200;
+                while (logContainer.children.length > maxEntries) {
+                    logContainer.removeChild(logContainer.lastChild);
+                }
+
+                // No client-side table updates here (server-side rendered)
+            } catch (err) {
+                console.error("WS message parse error:", err);
+            }
+        });
+
+        ws.addEventListener('close', () => {
+            const tries = ++window._wsRetry[serverId].attempts;
+            const wait = Math.min(30000, 1000 * Math.pow(2, Math.min(6, tries))); // exponential backoff up to 30s
+
+            const errorEntry = document.createElement('div');
+            errorEntry.className = "text-red-500 py-2";
+            errorEntry.innerText = `Connection lost. Reconnecting in ${Math.round(wait/1000)}s...`;
+            logContainer.prepend(errorEntry);
+
+            // schedule reconnect
+            setTimeout(() => {
+                // If an open/connecting socket was created meanwhile, don't create a new one
+                const current = window._serverWS[serverId];
+                if (!current || current.readyState === WebSocket.CLOSED) {
+                    createSocket();
+                }
+            }, wait);
+        });
+
+        ws.addEventListener('error', (e) => {
+            console.warn("WebSocket error", e);
+            // let close handler handle reconnection attempts
+        });
+
+        return ws;
+    }
+
+    // Initialize socket
+    createSocket();
+
+    // Clean up on full page unload to avoid dangling sockets
+    window.addEventListener('beforeunload', () => {
+        const ws = window._serverWS[serverId];
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            try { ws.close(); } catch (e) {}
+        }
+    });
+})();
+</script>
+
+<style>
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+</style>
+{% endblock %}

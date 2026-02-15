@@ -18,7 +18,6 @@
                     <th class="p-4 font-semibold">URL</th>
                     <th class="p-4 font-semibold">Interval (seconds)</th>
                     <th class="p-4 font-semibold">Status</th>
-                    <th class="p-4 font-semibold">Last Check</th>
                     <th class="p-4 font-semibold">Actions</th>
                 </tr>
             </thead>
@@ -29,11 +28,18 @@
                     <td class="p-4 text-slate-500">{{ site.server_url }}</td>
                     <td class="p-4 text-slate-500">{{ site.interval_seconds }}</td>
                     <td class="p-4">
-                        <span class="px-2 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">Online</span>
+                        {% if site.status == 'inactive' %}
+                            <span class="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 whitespace-nowrap">Site Down!</span>
+                        {% else %}
+                            <span class="px-2 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 whitespace-nowrap">Active</span>
+                        {% endif %}
                     </td>
-                    <td class="p-4 text-sm text-slate-400">2 mins ago</td>
                     <td class="p-4">
                         <div class="flex items-center space-x-3">
+                            <a href="/servers/analytics/{{ site.id }}" class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-md text-sm font-semibold hover:bg-indigo-200 whitespace-nowrap" title="Check Uptime" aria-label="Check uptime for {{ site.server_name }}">
+                                Check Uptime
+                            </a>
+
                             <a href="/servers/edit/{{ site.id }}" class="text-slate-400 hover:text-indigo-600" title="Edit" aria-label="Edit">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                     <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z"/>

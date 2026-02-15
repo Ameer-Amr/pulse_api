@@ -1,4 +1,6 @@
+import asyncio
 from fastapi import FastAPI, Request, Depends
+from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 from fastapi.responses import RedirectResponse
 from .config import templates
@@ -8,9 +10,26 @@ from users.api.endpoints import auth
 from servers.apis import api
 from users import models
 from servers.models import UserServer
+from servers.worker import monitoring_loop
+from fastapi.middleware.cors import CORSMiddleware
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # STARTUP: Run the monitoring loop in the background
+    worker_task = asyncio.create_task(monitoring_loop())
+    yield
+    # SHUTDOWN: Clean up
+    worker_task.cancel()
 
-app = FastAPI(title="PulseAPI", version="1.0.0")
+app = FastAPI(title="PulseAPI", version="1.0.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Include all our organized routes
 app.include_router(auth.router)
@@ -25,6 +44,7 @@ async def add_no_cache_header(request: Request, call_next):
     response.headers["Expires"] = "0"
     return response
 
+
 @app.get("/")
 async def root(request: Request):
     token = request.cookies.get("access_token")
@@ -32,13 +52,16 @@ async def root(request: Request):
         return RedirectResponse(url="/dashboard", status_code=303)
     return templates.TemplateResponse("index.html", {"request": request})
 
+
 @app.get("/signup")
 async def signup_page(request: Request):
     return templates.TemplateResponse("signup.html", {"request": request})
 
+
 @app.get("/signin")
 async def signin_page(request: Request):
     return templates.TemplateResponse("signin.html", {"request": request})
+
 
 @app.get("/dashboard")
 async def dashboard(request: Request, db: Session = Depends(get_db)):
@@ -55,6 +78,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         "dashboard.html", 
         {"request": request, "user": user, "sites": sites}
     )
+
 
 @app.get("/create-server")
 async def create_server_page(request: Request, db: Session = Depends(get_db)):

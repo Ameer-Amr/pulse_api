@@ -1,11 +1,12 @@
-from fastapi import Depends, HTTPException, APIRouter, status, Request, Form
+from fastapi import Depends, HTTPException, APIRouter, status, Request, Form, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
-from servers.models import UserServer
+from servers.models import ServerAnalytics, UserServer
 from app.database import get_db
 from users import models
 from app.config import templates
 from fastapi.responses import RedirectResponse
 from app.security import get_current_user_from_cookie
+from servers.websocket_manager import manager
 
 router = APIRouter(
     prefix="/servers",
@@ -115,3 +116,33 @@ async def edit_server(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
     return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+
+@router.get("/analytics/{server_id}")
+async def get_analytics(server_id: int, request: Request, db: Session = Depends(get_db)):
+
+    email = get_current_user_from_cookie(request)
+    if not email:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+    
+    user = db.query(models.User).filter(models.User.email == email).first()
+    server = db.query(UserServer).filter(UserServer.id == server_id, UserServer.user_id == user.id).first()
+    last_10 = db.query(ServerAnalytics).filter(ServerAnalytics.server_id == server_id).order_by(ServerAnalytics.created_at.desc()).limit(10).all()
+    
+    return templates.TemplateResponse("analytics.html", {
+        "request": request, 
+        "server": server,
+        "labels": last_10,
+        "user": user
+    })
+
+
+@router.websocket("/ws/server/{server_id}")
+async def websocket_endpoint(websocket: WebSocket, server_id: int):
+    await manager.connect(websocket, server_id)
+    try:
+        while True:
+            # Keep the connection alive
+            await websocket.receive_text() 
+    except WebSocketDisconnect as e:
+        manager.disconnect(websocket, server_id)
+
